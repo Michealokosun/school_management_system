@@ -1,0 +1,161 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../app/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Define the possible user roles
+enum Role {
+  ADMIN
+  TEACHER
+  STUDENT
+  PARENT // Optional, can add later
+}
+
+model User {
+  id        String   @id @default(uuid()) // Unique identifier for the user
+  email     String   @unique // User's email (must be unique)
+  password  String // Hashed password
+  name      String? // User's name (optional initially)
+  role      Role     @default(STUDENT) // Default role is STUDENT
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relationships (will add more later)
+  student Student?
+  teacher Teacher?
+}
+
+// Add placeholder models for related data (we'll build these out later)
+model Student {
+  id     String @id @default(uuid())
+  userId String @unique // Link to User model
+  user   User   @relation(fields: [userId], references: [id])
+
+  admissionNumber String? // Student's admission number
+  dateOfBirth     DateTime?
+  address         String?
+  parentContact   String? // Parent/Guardian contact
+
+  // Relationships (will add later)
+  enrollments StudentEnrollment[]
+  attendances Attendance[]
+  grades      Grade[]
+}
+
+model Teacher {
+  id     String @id @default(uuid())
+  userId String @unique // Link to User model
+  user   User   @relation(fields: [userId], references: [id])
+
+  employeeId     String? // Teacher's employee ID
+  qualifications String?
+
+  // Relationships (will add later)
+  classAssignments   TeacherClassAssignment[]
+  subjectAssignments ClassSubjectAssignment[]
+}
+
+model Class {
+  id           String @id @default(uuid())
+  name         String // e.g., "Grade 5A"
+  academicYear String // e.g., "2023-2024"
+
+  // Relationships
+  studentEnrollments StudentEnrollment[]
+  classSubjects      ClassSubjectAssignment[]
+  teacherAssignments TeacherClassAssignment[] // Teachers assigned *to* this class generally
+  attendances        Attendance[]
+  grades             Grade[] // Grades recorded for this class
+}
+
+model Subject {
+  id   String @id @default(uuid())
+  name String @unique // e.g., "Mathematics"
+
+  // Relationships
+  classSubjects ClassSubjectAssignment[]
+  grades        Grade[] // Grades recorded for this subject
+  attendances   Attendance[] // Attendance recorded for this subject
+
+  TeacherClassAssignment TeacherClassAssignment[]
+}
+
+// Junction tables for many-to-many relationships
+model TeacherClassAssignment {
+  id        String  @id @default(uuid()) // Optional ID, composite key might be enough but ID is safer
+  teacherId String
+  classId   String
+  subjectId String? // Optional: if assigning teacher to a class for a specific subject
+
+  teacher Teacher  @relation(fields: [teacherId], references: [id])
+  class   Class    @relation(fields: [classId], references: [id])
+  subject Subject? @relation(fields: [subjectId], references: [id]) // Link to subject if applicable
+
+  @@unique([teacherId, classId, subjectId]) // Ensure teacher assigned to class+subject only once
+}
+
+model ClassSubjectAssignment {
+  id        String @id @default(uuid())
+  classId   String
+  subjectId String
+  teacherId String // The teacher responsible for this subject in this class
+
+  class   Class   @relation(fields: [classId], references: [id])
+  subject Subject @relation(fields: [subjectId], references: [id])
+  teacher Teacher @relation(fields: [teacherId], references: [id]) // Link to the teacher
+
+  @@unique([classId, subjectId]) // Ensure a subject is assigned to a class only once
+}
+
+model StudentEnrollment {
+  id             String   @id @default(uuid())
+  studentId      String
+  classId        String
+  enrollmentDate DateTime @default(now())
+
+  student Student @relation(fields: [studentId], references: [id])
+  class   Class   @relation(fields: [classId], references: [id])
+
+  @@unique([studentId, classId]) // Ensure student enrolled in a class only once (per academic year implied by Class data)
+}
+
+model Attendance {
+  id        String   @id @default(uuid())
+  studentId String
+  classId   String
+  subjectId String? // Optional: attendance per subject
+  date      DateTime @default(now())
+  status    String // e.g., "Present", "Absent", "Late"
+
+  student Student  @relation(fields: [studentId], references: [id])
+  class   Class    @relation(fields: [classId], references: [id])
+  subject Subject? @relation(fields: [subjectId], references: [id])
+
+  @@unique([studentId, classId, subjectId, date]) // Attendance per student per class/subject per day
+}
+
+model Grade {
+  id             String   @id @default(uuid())
+  studentId      String
+  subjectId      String
+  classId        String // Redundant but useful for quick queries, link to StudentEnrollment implicitly
+  assessmentType String // e.g., "Midterm", "Quiz", "Assignment"
+  score          Float? // Numerical score
+  gradeLetter    String? // e.g., "A+", "B"
+  date           DateTime @default(now()) // Date of assessment
+
+  student Student @relation(fields: [studentId], references: [id])
+  subject Subject @relation(fields: [subjectId], references: [id])
+  class   Class   @relation(fields: [classId], references: [id]) // Link to class for context
+}
